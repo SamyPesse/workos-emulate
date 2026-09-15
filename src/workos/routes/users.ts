@@ -38,7 +38,13 @@ export function userRoutes(ctx: RouteContext): void {
     // the ambiguity by insertion order.
     const existing = findUserByEmail(ws, email);
     if (existing) {
-      throw new WorkOSApiError(409, 'A user with this email already exists', 'user_already_exists');
+      // The spec (UserlandUsersController_create in @workos/openapi-spec) documents no 409 for this
+      // endpoint: a taken email is a 400 `user_creation_error` carrying the reason in `errors`, and
+      // `email_not_available` is the detail production sends. Keep this specific to user creation;
+      // other 409 contracts remain independently meaningful to their SDK callers.
+      throw new WorkOSApiError(400, 'Could not create user.', 'user_creation_error', [
+        { code: 'email_not_available', message: 'This email is not available.' },
+      ]);
     }
 
     if (body.name !== undefined && body.name !== null && typeof body.name !== 'string') {
