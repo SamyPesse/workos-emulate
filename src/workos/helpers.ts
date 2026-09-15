@@ -371,8 +371,40 @@ export function formatMagicAuth(ma: WorkOSMagicAuth): Record<string, unknown> {
   return formatEntity(ma);
 }
 
+const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+/** Production validates a caller-supplied `totp_secret` against exactly this. */
+export const BASE32_SECRET = /^[A-Z2-7]+=*$/;
+
+/**
+ * The TOTP details an enrollment stores. Without a caller-supplied secret it mints 32 Base32
+ * characters — the 160 bits RFC 4226 recommends — so authenticator apps and TOTP libraries
+ * accept the secret verbatim; `uri` is the otpauth form those apps import.
+ */
+export function newTotp(issuer: string, user: string, secret?: string): WorkOSAuthenticationFactor['totp'] {
+  secret ??= Array.from(randomBytes(32), (b) => BASE32_ALPHABET[b & 31]).join('');
+  const issuerParam = encodeURIComponent(issuer);
+  return {
+    issuer,
+    user,
+    secret,
+    uri: `otpauth://totp/${issuerParam}:${encodeURIComponent(user)}?secret=${secret}&issuer=${issuerParam}`,
+  };
+}
+
+// ponytail: a valid 1×1 PNG, not a scannable code — the spec requires the field and SDKs require a
+// string, and the emulator never checks a real TOTP code. Add a QR encoder if a consumer's UI
+// test needs to scan it; `uri` already carries everything the code would.
+const TOTP_QR_CODE =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
+/** The spec's AuthenticationFactor: what GET and LIST return, secrets stripped. */
 export function formatAuthFactor(f: WorkOSAuthenticationFactor): Record<string, unknown> {
-  return formatEntity(f);
+  return { ...formatEntity(f), totp: { issuer: f.totp.issuer, user: f.totp.user } };
+}
+
+/** The spec's AuthenticationFactorEnrolled: the one response that shows the secrets. */
+export function formatAuthFactorEnrolled(f: WorkOSAuthenticationFactor): Record<string, unknown> {
+  return { ...formatEntity(f), totp: { ...f.totp, qr_code: TOTP_QR_CODE } };
 }
 
 /**
@@ -905,10 +937,13 @@ export function assertAllowedRedirectUri(uri: string, store: Store): void {
   );
 }
 
-const AUTH_CHALLENGE_EXCLUDE = new Set([...INTERNAL_FIELDS, 'code']);
+// `code` stays server-side as production keeps a TOTP challenge's; `user_id` and `factor_id`
+// are the store's join columns — the spec's challenge names its factor `authentication_factor_id`
+// and carries no user at all.
+const AUTH_CHALLENGE_EXCLUDE = new Set([...INTERNAL_FIELDS, 'code', 'user_id', 'factor_id']);
 
 export function formatAuthChallenge(c: WorkOSAuthenticationChallenge): Record<string, unknown> {
-  return formatEntity(c, { exclude: AUTH_CHALLENGE_EXCLUDE });
+  return { ...formatEntity(c, { exclude: AUTH_CHALLENGE_EXCLUDE }), authentication_factor_id: c.factor_id };
 }
 
 export function formatRole(role: WorkOSRole, ws: WorkOSStore): Record<string, unknown> {
