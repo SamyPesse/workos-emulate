@@ -191,7 +191,8 @@ export const FEATURES: FeatureDef[] = [
     tags: ['pipes', 'pipes.provider', 'user-management.data-providers'],
     emulatorCreateRoutes: ['/pipes'],
     seedKeys: ['connectedAccounts'],
-    notes: 'Connection CRUD and access-token minting are emulator-specific routes under `/pipes/connections`.',
+    notes:
+      'Connected-account CRUD and imported access-token retrieval are supported; provider token refresh is not emulated. The older `/pipes/connections` routes remain emulator-specific.',
   },
   {
     name: 'Applications',

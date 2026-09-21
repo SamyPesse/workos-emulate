@@ -383,6 +383,13 @@ tokens, so a later import is a fresh `201`. State changes emit the spec's
 `pipes.connected_account.connected` / `reauthorization_needed` / `disconnected` events,
 including for seeded accounts.
 
+`POST /data-integrations/{slug}/token` (the SDK's `pipes.getAccessToken`) retrieves an imported
+access token by `user_id` and optional `organization_id`, preserving its scopes and expiry.
+Missing accounts return `not_installed`; accounts needing reauthorization, missing tokens,
+or expired tokens return `needs_reauthorization`. Provider token refresh is not emulated,
+even when a refresh token was imported. Seeded accounts have no credentials; import tokens
+through the connected-account endpoint before retrieving them.
+
 ### Machine-to-Machine (M2M) Applications
 
 Seed M2M Connect Applications so a service has a known `client_id` / client secret pair on

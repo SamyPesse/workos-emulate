@@ -1,4 +1,4 @@
-import { type RouteContext, parseJsonBody, WorkOSApiError } from '../../core/index.js';
+import { type RouteContext, parseJsonBody, WorkOSApiError, notFound, validationError } from '../../core/index.js';
 import { getWorkOSStore } from '../store.js';
 import { assertAllowedRedirectUri, generateVerificationToken, expiresIn, isExpired } from '../helpers.js';
 
@@ -34,10 +34,51 @@ export function dataIntegrationRoutes(ctx: RouteContext): void {
     return c.redirect(redirect.toString(), 302);
   });
 
-  // Exchange code for token
+  // Retrieve an imported connected-account token, or exchange a legacy authorization code.
   app.post('/data-integrations/:slug/token', async (c) => {
     const slug = c.req.param('slug');
     const body = await parseJsonBody(c);
+
+    if (body.user_id !== undefined) {
+      if (typeof body.user_id !== 'string' || !body.user_id) {
+        throw validationError('user_id must be a non-empty string', [{ field: 'user_id', code: 'invalid' }]);
+      }
+      const organizationId = body.organization_id ?? null;
+      if (organizationId !== null && (typeof organizationId !== 'string' || !organizationId)) {
+        throw validationError('organization_id must be a non-empty string', [
+          { field: 'organization_id', code: 'invalid' },
+        ]);
+      }
+      if (!ws.users.get(body.user_id)) throw notFound('User');
+      if (organizationId && !ws.organizations.get(organizationId)) throw notFound('Organization');
+
+      const account = ws.connectedAccounts
+        .findBy('user_id', body.user_id)
+        .find((a) => a.provider === slug && a.organization_id === organizationId);
+      if (!account) return c.json({ active: false, error: 'not_installed' });
+
+      // Imported credentials are returned verbatim. Refreshing them would require contacting
+      // the real provider, so expired or absent access tokens need reauthorization instead.
+      if (
+        account.state !== 'connected' ||
+        !account.access_token ||
+        (account.token_expires_at && isExpired(account.token_expires_at))
+      ) {
+        return c.json({ active: false, error: 'needs_reauthorization' });
+      }
+
+      return c.json({
+        active: true,
+        access_token: {
+          object: 'access_token',
+          access_token: account.access_token,
+          expires_at: account.token_expires_at,
+          scopes: account.scopes,
+          missing_scopes: [],
+        },
+      });
+    }
+
     const code = body.code as string | undefined;
 
     if (!code) {
