@@ -218,6 +218,29 @@ describe('Data Integrations routes', () => {
       expect(await workos.pipes.getAccessToken({ provider: 'github', userId })).toEqual(result);
     });
 
+    it('exercises the reauthorization cycle: revoke through state, reconnect through a replacement token', async () => {
+      await importAccount({
+        access_token: 'old_token',
+        refresh_token: 'refresh_token',
+        expires_at: '2000-01-01T00:00:00.000Z',
+      });
+      const workos = sdkClient(app, 'sk_test_org');
+      const getToken = () => workos.pipes.getAccessToken({ provider: 'github', userId });
+      expect(await getToken()).toMatchObject({ active: true });
+
+      // The emulator cannot see a provider revoke a grant; the account's state is how a test says so.
+      await workos.pipes.updateUserConnectedAccount({ userId, slug: 'github', state: 'needs_reauthorization' });
+      expect(await getToken()).toEqual({ active: false, error: 'needs_reauthorization' });
+
+      // Re-authorizing replaces the token. Its expiry is the one sent with it — here none — not the
+      // refreshed token's, which would otherwise expire the reconnected account an hour later.
+      await workos.pipes.updateUserConnectedAccount({ userId, slug: 'github', accessToken: 'fresh_token' });
+      expect(await getToken()).toMatchObject({
+        active: true,
+        accessToken: { accessToken: 'fresh_token', expiresAt: null },
+      });
+    });
+
     it('mints a non-expiring token for a connected account that was never given credentials', async () => {
       // Both a bare `state: connected` import and a seeded account store no tokens.
       await importAccount({ state: 'connected' });

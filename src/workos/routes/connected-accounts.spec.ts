@@ -318,6 +318,10 @@ describe('Connected account routes', () => {
       });
       expect((await json(res)).state).toBe('connected');
       expect(eventsNamed('pipes.connected_account.connected')).toHaveLength(1);
+
+      // The replacement was sent without an expiry, so the old token's must not linger on the row.
+      const row = getWorkOSStore(store).connectedAccounts.findBy('user_id', user.id)[0]!;
+      expect(row).toMatchObject({ access_token: 'gho_new', token_expires_at: null });
     });
 
     it('keeps a retained refresh token in view when an update re-derives state', async () => {

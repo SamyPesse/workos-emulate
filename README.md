@@ -393,6 +393,9 @@ emulator — which never contacts the real provider — mints a `di_mock_…` to
 expiring one when a refresh token was imported (the emulated refresh), a non-expiring one for
 a seeded account, which is never given credentials. An expired token with no refresh token
 flips the account to `needs_reauthorization`, emitting its event, as a failed refresh would.
+The emulator cannot see a provider revoke a grant, so to exercise a reauthorization flow, set
+`state: needs_reauthorization` on the account — on import, with `PUT`, or in the seed — and
+reconnect it with a `PUT` carrying the new token.
 
 ### Machine-to-Machine (M2M) Applications
 
