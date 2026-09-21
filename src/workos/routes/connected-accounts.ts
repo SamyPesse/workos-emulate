@@ -8,7 +8,7 @@ import {
   WorkOSApiError,
 } from '../../core/index.js';
 import { getWorkOSStore } from '../store.js';
-import { formatConnectedAccount, dataIntegrationIdFor } from '../helpers.js';
+import { formatConnectedAccount, dataIntegrationIdFor, findConnectedAccount } from '../helpers.js';
 import type { ConnectedAccountState, WorkOSConnectedAccount } from '../entities.js';
 
 /**
@@ -81,11 +81,14 @@ export function connectedAccountRoutes(ctx: RouteContext): void {
 
   /**
    * The account a request addresses. The user in the path and the organization in the query
-   * (when given) must both exist — the spec 404s on either before the account itself — and the
-   * account is keyed by (user, slug, organization): a connection made without an organization
-   * scope is a different account from one made with it, so the lookups never cross.
+   * (when given) must both exist — the spec 404s on either before the account itself. Import
+   * keys the account by (user, slug, organization) exactly, since that key decides 201 vs 409;
+   * the other verbs treat `organization_id` as a filter (see `findConnectedAccount`).
    */
-  function resolveTarget(c: Context<WorkOSAppEnv, typeof ACCOUNT_PATH>): {
+  function resolveTarget(
+    c: Context<WorkOSAppEnv, typeof ACCOUNT_PATH>,
+    { exact = false } = {},
+  ): {
     userId: string;
     slug: string;
     organizationId: string | null;
@@ -98,9 +101,11 @@ export function connectedAccountRoutes(ctx: RouteContext): void {
     const organizationId = new URL(c.req.url).searchParams.get('organization_id');
     if (organizationId && !ws.organizations.get(organizationId)) throw notFound('Organization');
 
-    const account = ws.connectedAccounts
-      .findBy('user_id', user.id)
-      .find((a) => a.provider === slug && a.organization_id === (organizationId ?? null));
+    const account = exact
+      ? ws.connectedAccounts
+          .findBy('user_id', user.id)
+          .find((a) => a.provider === slug && a.organization_id === (organizationId ?? null))
+      : findConnectedAccount(ws, user.id, slug, organizationId ?? null);
     return { userId: user.id, slug, organizationId: organizationId ?? null, account };
   }
 
@@ -111,7 +116,7 @@ export function connectedAccountRoutes(ctx: RouteContext): void {
   });
 
   app.post(ACCOUNT_PATH, async (c) => {
-    const { userId, slug, organizationId, account } = resolveTarget(c);
+    const { userId, slug, organizationId, account } = resolveTarget(c, { exact: true });
     if (account) {
       throw new WorkOSApiError(
         409,

@@ -1,6 +1,12 @@
 import { type RouteContext, parseJsonBody, WorkOSApiError, notFound, validationError } from '../../core/index.js';
 import { getWorkOSStore } from '../store.js';
-import { assertAllowedRedirectUri, generateVerificationToken, expiresIn, isExpired } from '../helpers.js';
+import {
+  assertAllowedRedirectUri,
+  generateVerificationToken,
+  expiresIn,
+  isExpired,
+  findConnectedAccount,
+} from '../helpers.js';
 
 export function dataIntegrationRoutes(ctx: RouteContext): void {
   const { app, store } = ctx;
@@ -34,12 +40,15 @@ export function dataIntegrationRoutes(ctx: RouteContext): void {
     return c.redirect(redirect.toString(), 302);
   });
 
-  // Retrieve an imported connected-account token, or exchange a legacy authorization code.
+  // Retrieve a connected account's token (the spec's request), or exchange a legacy authorization code.
   app.post('/data-integrations/:slug/token', async (c) => {
     const slug = c.req.param('slug');
     const body = await parseJsonBody(c);
 
-    if (body.user_id !== undefined) {
+    if (body.code === undefined) {
+      if (body.user_id === undefined) {
+        throw validationError('user_id is required', [{ field: 'user_id', code: 'required' }]);
+      }
       if (typeof body.user_id !== 'string' || !body.user_id) {
         throw validationError('user_id must be a non-empty string', [{ field: 'user_id', code: 'invalid' }]);
       }
@@ -52,19 +61,25 @@ export function dataIntegrationRoutes(ctx: RouteContext): void {
       if (!ws.users.get(body.user_id)) throw notFound('User');
       if (organizationId && !ws.organizations.get(organizationId)) throw notFound('Organization');
 
-      const account = ws.connectedAccounts
-        .findBy('user_id', body.user_id)
-        .find((a) => a.provider === slug && a.organization_id === organizationId);
+      let account = findConnectedAccount(ws, body.user_id, slug, organizationId);
       if (!account) return c.json({ active: false, error: 'not_installed' });
 
-      // Imported credentials are returned verbatim. Refreshing them would require contacting
-      // the real provider, so expired or absent access tokens need reauthorization instead.
-      if (
-        account.state !== 'connected' ||
-        !account.access_token ||
-        (account.token_expires_at && isExpired(account.token_expires_at))
-      ) {
-        return c.json({ active: false, error: 'needs_reauthorization' });
+      const expired = account.token_expires_at !== null && isExpired(account.token_expires_at);
+      if (account.state === 'connected' && expired && !account.refresh_token) {
+        // Production's refresh attempt fails on an unrefreshable token and flips the account;
+        // the collection hook emits reauthorization_needed.
+        account = ws.connectedAccounts.update(account.id, { state: 'needs_reauthorization' })!;
+      }
+      if (account.state !== 'connected') return c.json({ active: false, error: 'needs_reauthorization' });
+
+      if (!account.access_token || expired) {
+        // A connected account always has a usable token. The emulator cannot reach the provider,
+        // so a refresh — or a seeded account that was never given credentials — mints one
+        // locally, as the legacy exchange below does. Stored, so repeat calls return the same one.
+        account = ws.connectedAccounts.update(account.id, {
+          access_token: `di_mock_${slug}_${generateVerificationToken().slice(0, 8)}`,
+          token_expires_at: account.refresh_token ? expiresIn(60) : null,
+        })!;
       }
 
       return c.json({

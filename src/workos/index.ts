@@ -206,8 +206,8 @@ export interface WorkOSSeedConnectedAccount {
   provider: string;
   /**
    * Name of an organization defined in `organizations`, for a connection scoped to one.
-   * Requests must then carry the same scope (`?organization_id=…`) — an unscoped lookup
-   * does not resolve an org-scoped account, matching the API's keying.
+   * Lookups filter by `?organization_id=…`: a user's lone account for a provider resolves
+   * without it, while several scoped ones must name theirs, matching the API's 409.
    */
   organization?: string;
   /** OAuth scopes granted for the connection. */

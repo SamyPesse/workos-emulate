@@ -192,7 +192,7 @@ export const FEATURES: FeatureDef[] = [
     emulatorCreateRoutes: ['/pipes'],
     seedKeys: ['connectedAccounts'],
     notes:
-      'Connected-account CRUD and imported access-token retrieval are supported; provider token refresh is not emulated. The older `/pipes/connections` routes remain emulator-specific.',
+      'Connected-account CRUD and access-token retrieval are supported; a refresh mints a local `di_mock_` token rather than contacting the provider. The older `/pipes/connections` routes remain emulator-specific.',
   },
   {
     name: 'Applications',

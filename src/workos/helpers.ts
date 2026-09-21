@@ -681,6 +681,31 @@ export function dataIntegrationIdFor(ws: WorkOSStore, slug: string): string {
   return existing?.data_integration_id ?? generateId(ID_PREFIXES.data_integration);
 }
 
+/**
+ * The connected account a (user, provider) lookup addresses. `organization_id` narrows the
+ * match rather than keying it: omitted, a lone account resolves whatever its scope, and
+ * several — one provider installed in two organizations — answer the spec's 409 ("several
+ * connected accounts match this user for the provider; one must be named").
+ */
+export function findConnectedAccount(
+  ws: WorkOSStore,
+  userId: string,
+  slug: string,
+  organizationId: string | null,
+): WorkOSConnectedAccount | undefined {
+  const matches = ws.connectedAccounts
+    .findBy('user_id', userId)
+    .filter((a) => a.provider === slug && (organizationId === null || a.organization_id === organizationId));
+  if (matches.length > 1) {
+    throw new WorkOSApiError(
+      409,
+      `Several connected accounts match provider '${slug}' for this user; name one with organization_id`,
+      'conflict',
+    );
+  }
+  return matches[0];
+}
+
 /** Redirect URI hosts the emulator's authorize endpoints accept with no configuration. */
 export const DEFAULT_ALLOWED_REDIRECT_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
 

@@ -371,24 +371,28 @@ connectedAccounts:
     scopes: [repo, user:email]
   - email: alice@acme.com
     provider: slack
-    organization: Acme Corp # resolvable only with ?organization_id=<its id>
+    organization: Acme Corp # scoped to that organization's id
     state: needs_reauthorization # defaults to connected
 ```
 
-Accounts are keyed by (user, provider, organization scope), exactly as the API addresses
-them. `POST` imports an account from OAuth tokens — an omitted `state` is derived from the
-token combination (an expired access token with no refresh token is `needs_reauthorization`) —
-and answers `409` for a duplicate. `DELETE` disconnects by removing the account and its stored
-tokens, so a later import is a fresh `201`. State changes emit the spec's
-`pipes.connected_account.connected` / `reauthorization_needed` / `disconnected` events,
-including for seeded accounts.
+Accounts are keyed by (user, provider, organization scope). `POST` imports an account from
+OAuth tokens under exactly that key — an omitted `state` is derived from the token combination
+(an expired access token with no refresh token is `needs_reauthorization`) — and answers `409`
+for a duplicate. On every other verb `organization_id` is a filter, as in the API: omitted, a
+user's lone account for the provider resolves whatever its scope, and several (one provider
+installed in two organizations) answer `409` until one is named. `DELETE` disconnects by
+removing the account and its stored tokens, so a later import is a fresh `201`. State changes
+emit the spec's `pipes.connected_account.connected` / `reauthorization_needed` /
+`disconnected` events, including for seeded accounts.
 
-`POST /data-integrations/{slug}/token` (the SDK's `pipes.getAccessToken`) retrieves an imported
-access token by `user_id` and optional `organization_id`, preserving its scopes and expiry.
-Missing accounts return `not_installed`; accounts needing reauthorization, missing tokens,
-or expired tokens return `needs_reauthorization`. Provider token refresh is not emulated,
-even when a refresh token was imported. Seeded accounts have no credentials; import tokens
-through the connected-account endpoint before retrieving them.
+`POST /data-integrations/{slug}/token` (the SDK's `pipes.getAccessToken`) resolves the account
+the same way and returns its access token with its scopes and expiry. Missing accounts return
+`not_installed`; accounts in `needs_reauthorization` return that. A `connected` account always
+yields a token: an imported one is returned verbatim while it is unexpired, and otherwise the
+emulator — which never contacts the real provider — mints a `di_mock_…` token in its place: an
+expiring one when a refresh token was imported (the emulated refresh), a non-expiring one for
+a seeded account, which is never given credentials. An expired token with no refresh token
+flips the account to `needs_reauthorization`, emitting its event, as a failed refresh would.
 
 ### Machine-to-Machine (M2M) Applications
 

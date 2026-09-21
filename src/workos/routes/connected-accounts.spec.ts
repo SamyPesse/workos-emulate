@@ -76,22 +76,26 @@ describe('Connected account routes', () => {
       expect(account.state).toBe('connected');
     });
 
-    it('keys an org-scoped seed by the organization_id query parameter', async () => {
+    it('resolves an org-scoped seed with or without its organization_id named', async () => {
       seed({
         users: [{ email: 'scoped@acme.test' }],
-        organizations: [{ name: 'Acme' }],
+        organizations: [{ name: 'Acme' }, { name: 'Other' }],
         connectedAccounts: [{ email: 'scoped@acme.test', provider: 'slack', organization: 'Acme' }],
       });
       const ws = getWorkOSStore(store);
       const user = ws.users.findOneBy('email', 'scoped@acme.test')!;
       const org = ws.organizations.findOneBy('name', 'Acme')!;
+      const other = ws.organizations.findOneBy('name', 'Other')!;
 
-      // The scope is part of the key: an unscoped lookup does not resolve an org-scoped account.
-      expect((await req(`/user_management/users/${user.id}/connected_accounts/slack`)).status).toBe(404);
-
-      const res = await req(`/user_management/users/${user.id}/connected_accounts/slack?organization_id=${org.id}`);
-      expect(res.status).toBe(200);
-      expect((await json(res)).organization_id).toBe(org.id);
+      // organization_id filters rather than keys: the lone account is the match either way.
+      for (const qs of ['', `?organization_id=${org.id}`]) {
+        const res = await req(`/user_management/users/${user.id}/connected_accounts/slack${qs}`);
+        expect(res.status).toBe(200);
+        expect((await json(res)).organization_id).toBe(org.id);
+      }
+      expect(
+        (await req(`/user_management/users/${user.id}/connected_accounts/slack?organization_id=${other.id}`)).status,
+      ).toBe(404);
     });
 
     it('preserves a seeded needs_reauthorization state and emits its event', async () => {
@@ -242,10 +246,11 @@ describe('Connected account routes', () => {
       expect(res.status).toBe(409);
     });
 
-    it('keeps org-scoped and unscoped accounts of one provider apart, sharing the integration', async () => {
-      seed({ organizations: [{ name: 'Acme' }] });
+    it('keeps one provider’s installations apart by scope, and 409s an unscoped lookup across several', async () => {
+      seed({ organizations: [{ name: 'Acme' }, { name: 'Other' }] });
       const ws = getWorkOSStore(store);
       const org = ws.organizations.findOneBy('name', 'Acme')!;
+      const other = ws.organizations.findOneBy('name', 'Other')!;
       const user = await createUser('both@test.com');
 
       const post = (qs: string) =>
@@ -253,19 +258,27 @@ describe('Connected account routes', () => {
           method: 'POST',
           body: JSON.stringify({ access_token: 'gho_x' }),
         });
-      expect((await post('')).status).toBe(201);
+      // Import keys by exact scope, so a second organization is a new account, not a 409.
       expect((await post(`?organization_id=${org.id}`)).status).toBe(201);
+      expect((await post(`?organization_id=${other.id}`)).status).toBe(201);
 
-      const unscoped = await json(await req(`/user_management/users/${user.id}/connected_accounts/github`));
       const scoped = await json(
         await req(`/user_management/users/${user.id}/connected_accounts/github?organization_id=${org.id}`),
       );
-      expect(unscoped.id).not.toBe(scoped.id);
-      expect(unscoped.organization_id).toBeNull();
       expect(scoped.organization_id).toBe(org.id);
+
+      // Several installations match the user and provider: the spec says one must be named.
+      for (const method of ['GET', 'PUT', 'DELETE']) {
+        const res = await req(`/user_management/users/${user.id}/connected_accounts/github`, {
+          method,
+          ...(method === 'PUT' ? { body: JSON.stringify({ scopes: ['repo'] }) } : {}),
+        });
+        expect(res.status).toBe(409);
+      }
 
       // One provider, one integration: both installations install the same data integration.
       const rows = ws.connectedAccounts.findBy('user_id', user.id);
+      expect(rows).toHaveLength(2);
       expect(new Set(rows.map((r) => r.data_integration_id)).size).toBe(1);
     });
   });
