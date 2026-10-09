@@ -205,6 +205,12 @@ emulator.reset();
 await emulator.close();
 ```
 
+The emulator's request budget defaults to 1,000 per API key in each 60-second window. Larger
+integration suites that share an API key can set `requestsPerMinute` to a positive safe integer,
+for example `createEmulator({ port: 0, requestsPerMinute: 10_000 })`. Rate-limit headers and HTTP 429
+responses with `Retry-After` still reflect the configured budget. Anonymous requests share a
+separate budget.
+
 ### ⚠️ Important: EventBus Reset Limitation
 
 The `reset()` method clears all data and re-seeds from the original config, but **route-level authentication events will not work after reset**. This is because Hono's router cannot be modified after it's built, so the EventBus cannot be re-registered with the collection hooks.
@@ -1734,7 +1740,7 @@ The WorkOS Emulator is designed for testing and development environments. When u
 ### Authentication & Authorization
 
 - **No real authentication**: The emulator uses a simple API key system (`sk_test_default`) that provides no real security. Anyone with access to the emulator can make API calls.
-- **No rate limiting**: By default, the emulator has no rate limiting. In production scenarios, implement rate limiting to prevent abuse.
+- **Local rate limiting**: The emulator defaults to a 1,000-request budget per API key per minute, configurable through `requestsPerMinute`. This in-memory limit is intended for tests, not production abuse protection.
 - **Public error hook endpoints**: The `/_emulate/hooks` endpoints require no authentication and can be used by anyone who can reach the server.
 
 ### Data Security
