@@ -207,9 +207,10 @@ await emulator.close();
 
 The emulator's request budget defaults to 1,000 per API key in each 60-second window. Larger
 integration suites that share an API key can set `requestsPerMinute` to a positive safe integer,
-for example `createEmulator({ port: 0, requestsPerMinute: 10_000 })`. Rate-limit headers and HTTP 429
-responses with `Retry-After` still reflect the configured budget. Anonymous requests share a
-separate budget.
+for example `createEmulator({ port: 0, requestsPerMinute: 10_000 })`. The full configured budget is
+accepted, so a budget of 1 allows one request before HTTP 429 responses with `Retry-After`. The
+last accepted request has `X-RateLimit-Remaining: 0`; the budget resets 60 seconds after the first
+request in the window. Anonymous requests share a separate budget.
 
 ### ⚠️ Important: EventBus Reset Limitation
 

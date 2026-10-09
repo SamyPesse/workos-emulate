@@ -142,13 +142,11 @@ export function createServer(plugin: ServicePlugin, options: ServerOptions = {})
       rateLimitCounters.set(key, counter);
     }
 
-    counter.remaining = Math.max(0, counter.remaining - 1);
-
     c.header('X-RateLimit-Limit', String(requestsPerMinute));
-    c.header('X-RateLimit-Remaining', String(counter.remaining));
     c.header('X-RateLimit-Reset', String(counter.resetAt));
 
     if (counter.remaining === 0) {
+      c.header('X-RateLimit-Remaining', '0');
       c.header('Retry-After', String(counter.resetAt - now));
       return c.json(
         {
@@ -158,6 +156,9 @@ export function createServer(plugin: ServicePlugin, options: ServerOptions = {})
         429,
       );
     }
+
+    counter.remaining -= 1;
+    c.header('X-RateLimit-Remaining', String(counter.remaining));
 
     await next();
   });
