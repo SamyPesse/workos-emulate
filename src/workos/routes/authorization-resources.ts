@@ -216,9 +216,12 @@ export function authorizationResourceRoutes(ctx: RouteContext): void {
     const updated = ws.authorizationResources.update(resourceId, updates);
     return c.json(formatAuthorizationResource(updated!));
   };
-  app.on(['PUT', 'PATCH'], '/authorization/resources/:resource_id', (c) => {
-    return updateResource(c, ws.authorizationResources.get(c.req.param('resource_id')));
-  });
+  app.put('/authorization/resources/:resource_id', (c) =>
+    updateResource(c, ws.authorizationResources.get(c.req.param('resource_id'))),
+  );
+  app.patch('/authorization/resources/:resource_id', (c) =>
+    updateResource(c, ws.authorizationResources.get(c.req.param('resource_id'))),
+  );
   app.patch('/authorization/organizations/:orgId/resources/:type_slug/:external_id', (c) => {
     return updateResource(
       c,

@@ -88,13 +88,19 @@ describe('Native group authorization', () => {
     const memberPath = `/authorization/organization_memberships/${membership.id}/role_assignments`;
     const derived = ((await (await request(`${memberPath}?resource_id=${resource.id}`)).json()) as any).data;
     expect(derived).toHaveLength(1);
+    expect(derived[0].id).toMatch(/^role_assignment_/);
     expect(derived[0]).toMatchObject({
+      object: 'role_assignment',
       organization_membership_id: membership.id,
       source: { type: 'group', group_role_assignment_id: assignment.id },
     });
+    expect(((await (await request(memberPath)).json()) as any).data[0].id).toBe(derived[0].id);
     expect(((await (await request(`${memberPath}?resource_id=${other.id}`)).json()) as any).data).toEqual([]);
     const resourcePath = `/authorization/organizations/${organization.id}/resources/repository/repo/role_assignments`;
-    expect(((await (await request(resourcePath)).json()) as any).data[0].source.type).toBe('group');
+    expect(((await (await request(resourcePath)).json()) as any).data[0]).toMatchObject({
+      id: derived[0].id,
+      source: { type: 'group' },
+    });
     const resources = await request(
       `/authorization/organization_memberships/${membership.id}/resources?permission_slug=repository:read&parent_resource_type_slug=organization&parent_resource_external_id=${organization.id}`,
     );

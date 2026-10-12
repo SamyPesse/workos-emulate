@@ -7,6 +7,7 @@ import {
   validationError,
   parseJsonBody,
   parseListParams,
+  ID_PREFIXES,
 } from '../../core/index.js';
 import type { WorkOSAuthorizationResource, WorkOSRoleAssignment, WorkOSGroupRoleAssignment } from '../entities.js';
 import { getWorkOSStore, type WorkOSStore } from '../store.js';
@@ -79,7 +80,7 @@ function membershipRoleAssignments(ws: WorkOSStore, membershipId: string): WorkO
     for (const assignment of ws.groupRoleAssignments.findBy('group_id', group.id)) {
       assignments.push({
         ...assignment,
-        id: `${assignment.id}_${membershipId}`,
+        id: `${ID_PREFIXES.role_assignment}_${assignment.id}_${membershipId}`,
         object: 'role_assignment',
         organization_membership_id: membershipId,
         group_role_assignment_id: assignment.id,
