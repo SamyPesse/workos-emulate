@@ -157,7 +157,7 @@ export const FEATURES: FeatureDef[] = [
     tags: ['authorization', 'permissions'],
     seedKeys: ['roles', 'permissions'],
     notes:
-      'Checks and effective-permission listings honor resource-scoped role assignments and ancestor inheritance (`parent_resource_id`); group role assignments are not implemented. Resource types are not modeled: any `resource_type_slug` is accepted on roles and permissions, and permission scopes are not checked against the role scope. Every organization owns an implicit `organization` resource whose `external_id` is the organization `external_id`, falling back to the organization id; resources created without parent fields attach to it, and it cannot be created, updated, or deleted directly.',
+      'Checks and effective-permission listings include direct and native group role assignments, live group membership, and ancestor inheritance (`parent_resource_id`). Group grants support create/list/get and removal by ID or criteria; bulk replacement is not implemented. Resource types are not modeled: any `resource_type_slug` is accepted on roles and permissions, and permission scopes are not checked against the role scope. Every organization owns an implicit `organization` resource whose `external_id` is the organization `external_id`, falling back to the organization id; resources created without parent fields attach to it, and it cannot be created, updated, or deleted directly.',
   },
   {
     name: 'Audit Logs',

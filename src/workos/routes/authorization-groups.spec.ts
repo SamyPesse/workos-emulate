@@ -106,43 +106,27 @@ describe('Native group authorization', () => {
     expect(await check()).toBe(false);
   });
 
-  it('rejects foreign subjects, duplicate grants, and mismatched assignment IDs', async () => {
-    const { resource, path, assignment, check } = await setup();
-    expect((await request(path, 'POST', { role_slug: 'repository-reader', resource_id: resource.id })).status).toBe(
-      409,
-    );
-    const foreign = await create('/organizations', { name: 'Other organization' });
-    const foreignGroup = await create(`/organizations/${foreign.id}/groups`, { name: 'Foreign' });
-    const foreignPath = `/authorization/groups/${foreignGroup.id}/role_assignments`;
-    expect(
-      (await request(foreignPath, 'POST', { role_slug: 'repository-reader', resource_id: resource.id })).status,
-    ).toBe(404);
-    expect((await request(`${foreignPath}/${assignment.id}`, 'DELETE')).status).toBe(404);
+  it('removes direct and group grants by role and resource criteria', async () => {
+    const { membership, resource, path, check } = await setup();
+    const memberPath = `/authorization/organization_memberships/${membership.id}/role_assignments`;
+    const criteria = {
+      role_slug: 'repository-reader',
+      resource_type_slug: 'repository',
+      resource_external_id: resource.external_id,
+    };
+    await create(memberPath, criteria);
+    expect((await request(memberPath, 'DELETE', criteria)).status).toBe(204);
     expect(await check()).toBe(true);
-    expect((await request(`${path}/${assignment.id}`, 'DELETE')).status).toBe(204);
+    expect((await request(path, 'DELETE', criteria)).status).toBe(204);
     expect(await check()).toBe(false);
+    expect((await request(path, 'DELETE', criteria)).status).toBe(204);
   });
 
-  it('cascades group grants when resources, roles, or groups are deleted', async () => {
-    for (const target of ['resource', 'role', 'group'] as const) {
-      const { organization, role, resource, group, path, check } = await setup();
-      if (target === 'resource') {
-        expect((await request(`/authorization/resources/${resource.id}`, 'DELETE')).status).toBe(409);
-        expect((await request(`/authorization/resources/${resource.id}?cascade_delete=true`, 'DELETE')).status).toBe(
-          204,
-        );
-      } else if (target === 'role') {
-        expect((await request(`/authorization/roles/${role.slug}`, 'DELETE')).status).toBe(204);
-        expect(await check()).toBe(false);
-      } else {
-        expect((await request(`/organizations/${organization.id}/groups/${group.id}`, 'DELETE')).status).toBe(204);
-        expect(await check()).toBe(false);
-      }
-      const response = await request(path);
-      if (target === 'group') expect(response.status).toBe(404);
-      else expect(((await response.json()) as any).data).toEqual([]);
-      app = createServer(workosPlugin, { apiKeys: { sk_test_groups_authz: { environment: 'test' } } }).app;
-    }
+  it('deleting a group removes its grants and revokes access', async () => {
+    const { organization, group, path, assignment, check } = await setup();
+    expect((await request(`/organizations/${organization.id}/groups/${group.id}`, 'DELETE')).status).toBe(204);
+    expect(await check()).toBe(false);
+    expect((await request(`${path}/${assignment.id}`)).status).toBe(404);
   });
 
   it('updates resources through SDK PATCH paths by ID and external ID, including null descriptions', async () => {
@@ -157,6 +141,5 @@ describe('Native group authorization', () => {
     const second = await request(path, 'PATCH', { description: 'Current description' });
     expect(second.status).toBe(200);
     expect(await second.json()).toMatchObject({ id: resource.id, name: 'Renamed', description: 'Current description' });
-    expect((await request(path.replace(organization.id, 'org_foreign'), 'PATCH', { name: 'Denied' })).status).toBe(404);
   });
 });

@@ -362,6 +362,20 @@ export function authorizationCheckRoutes(ctx: RouteContext): void {
     ws.groupRoleAssignments.delete(assignment.id);
     return c.body(null, 204);
   });
+  app.delete('/authorization/groups/:groupId/role_assignments', async (c) => {
+    const group = ws.groups.get(c.req.param('groupId'));
+    if (!group) throw notFound('Group');
+    const body = await parseJsonBody(c);
+    if (typeof body.role_slug !== 'string' || !body.role_slug)
+      throw validationError('role_slug is required', [{ field: 'role_slug', code: 'required' }]);
+    const resource = resolveResourceTarget(ws, body, group.organization_id);
+    for (const assignment of ws.groupRoleAssignments.findBy('group_id', group.id)) {
+      if (assignment.role_slug === body.role_slug && assignment.resource_id === (resource?.id ?? null)) {
+        ws.groupRoleAssignments.delete(assignment.id);
+      }
+    }
+    return c.body(null, 204);
+  });
   // Create role assignment
   app.post('/authorization/organization_memberships/:id/role_assignments', async (c) => {
     const membershipId = c.req.param('id');
@@ -416,6 +430,21 @@ export function authorizationCheckRoutes(ctx: RouteContext): void {
     }
 
     ws.roleAssignments.delete(assignmentId);
+    return c.body(null, 204);
+  });
+  app.delete('/authorization/organization_memberships/:id/role_assignments', async (c) => {
+    const membershipId = c.req.param('id');
+    const membership = ws.organizationMemberships.get(membershipId);
+    if (!membership) throw notFound('OrganizationMembership');
+    const body = await parseJsonBody(c);
+    if (typeof body.role_slug !== 'string' || !body.role_slug)
+      throw validationError('role_slug is required', [{ field: 'role_slug', code: 'required' }]);
+    const resource = resolveResourceTarget(ws, body, membership.organization_id);
+    for (const assignment of ws.roleAssignments.findBy('organization_membership_id', membershipId)) {
+      if (assignment.role_slug === body.role_slug && assignment.resource_id === (resource?.id ?? null)) {
+        ws.roleAssignments.delete(assignment.id);
+      }
+    }
     return c.body(null, 204);
   });
 }

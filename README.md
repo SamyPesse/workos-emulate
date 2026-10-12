@@ -245,13 +245,15 @@ const newEmulator = await createEmulator({ port: 0 });
 
 Native AuthKit groups can receive scoped roles through
 `/authorization/groups/{groupId}/role_assignments`: create and list assignments, then get or delete
-one by ID. Duplicate assignments return `409`; roles and resources from another organization are
+one by ID or remove by role and resource criteria. Direct role assignments also support criteria
+removal through `DELETE /authorization/organization_memberships/{id}/role_assignments`.
+Duplicate group assignments return `409`; roles and resources from another organization are
 rejected. Permission checks, effective-permission lists, and accessible-resource discovery resolve
 current group membership and include grants on resource ancestors. Removing a member or group
 revokes its derived access immediately. Membership and resource assignment lists expose inherited
 grants with `source.type: "group"` and the source group assignment ID; resource filters are honored.
 Deleting a role, group, or resource also removes its group grants. The emulator does not invent
-role-assignment webhook events. Bulk group assignment replacement and removal are not yet supported.
+role-assignment webhook events. Bulk group assignment replacement is not yet supported.
 
 Resource updates accept the Node SDK's `PATCH` endpoints by ID and by organization, resource type,
 and external ID. The earlier `PUT`-by-ID endpoint remains available.
