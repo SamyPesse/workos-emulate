@@ -1,6 +1,14 @@
 import type { Context } from 'hono';
-import { type RouteContext, notFound, validationError, parseJsonBody, parseListParams } from '../../core/index.js';
-import type { WorkOSAuthorizationResource } from '../entities.js';
+import {
+  type RouteContext,
+  WorkOSApiError,
+  cursorPaginate,
+  notFound,
+  validationError,
+  parseJsonBody,
+  parseListParams,
+} from '../../core/index.js';
+import type { WorkOSAuthorizationResource, WorkOSRoleAssignment, WorkOSGroupRoleAssignment } from '../entities.js';
 import { getWorkOSStore, type WorkOSStore } from '../store.js';
 import { formatRoleAssignment, formatAuthorizationResource, formatListResponse, formatPermission } from '../helpers.js';
 import { resolvePrimaryRole } from '../role-helpers.js';
@@ -49,7 +57,7 @@ function getPermissionsForMembership(
 
   // Permissions from additional role assignments
   const scopeIds = resource ? resourceAncestry(ws, resource) : null;
-  const assignments = ws.roleAssignments.findBy('organization_membership_id', membershipId);
+  const assignments = membershipRoleAssignments(ws, membershipId);
   for (const assignment of assignments) {
     if (scopeIds && assignment.resource_id !== null && !scopeIds.has(assignment.resource_id)) continue;
     const role = ws.roles.get(assignment.role_id);
@@ -59,6 +67,37 @@ function getPermissionsForMembership(
   return permSlugs;
 }
 
+// Group-derived assignments use the same scope rules as direct grants. Resolve live
+// groups and memberships each time so deletion or membership removal revokes access.
+function membershipRoleAssignments(ws: WorkOSStore, membershipId: string): WorkOSRoleAssignment[] {
+  const membership = ws.organizationMemberships.get(membershipId);
+  if (!membership) return [];
+  const assignments = [...ws.roleAssignments.findBy('organization_membership_id', membershipId)];
+  for (const link of ws.groupMemberships.findBy('organization_membership_id', membershipId)) {
+    const group = ws.groups.get(link.group_id);
+    if (!group || group.organization_id !== membership.organization_id) continue;
+    for (const assignment of ws.groupRoleAssignments.findBy('group_id', group.id)) {
+      assignments.push({
+        ...assignment,
+        id: `${assignment.id}_${membershipId}`,
+        object: 'role_assignment',
+        organization_membership_id: membershipId,
+        group_role_assignment_id: assignment.id,
+      });
+    }
+  }
+  return assignments;
+}
+function formatGroupRoleAssignment(assignment: WorkOSGroupRoleAssignment): Record<string, unknown> {
+  const { id, created_at, updated_at } = assignment;
+  const role = { slug: assignment.role_slug };
+  const resource = {
+    id: assignment.resource_id,
+    external_id: assignment.resource_external_id,
+    resource_type_slug: assignment.resource_type_slug,
+  };
+  return { object: 'group_role_assignment', id, group_id: assignment.group_id, role, resource, created_at, updated_at };
+}
 // Resolve the resource a request body targets: resource_id, or
 // resource_external_id + resource_type_slug. Returns null when the body names
 // no resource at all.
@@ -234,14 +273,95 @@ export function authorizationCheckRoutes(ctx: RouteContext): void {
     const url = new URL(c.req.url);
     const params = parseListParams(url);
 
-    const result = ws.roleAssignments.list({
-      ...params,
-      filter: (ra) => ra.organization_membership_id === membershipId,
-    });
+    const hasResource = ['resource_id', 'resource_external_id', 'resource_type_slug'].some((key) =>
+      url.searchParams.has(key),
+    );
+    const resource = hasResource
+      ? resolveResourceTarget(ws, Object.fromEntries(url.searchParams), membership.organization_id)
+      : null;
+    const result = cursorPaginate(
+      membershipRoleAssignments(ws, membershipId).filter(
+        (assignment) => !hasResource || assignment.resource_id === resource?.id,
+      ),
+      params,
+    );
 
     return c.json(formatListResponse(result, formatRoleAssignment));
   });
 
+  // Resource-centered grant listings include native group-derived assignments.
+  const listResourceAssignments = (c: Context, resource: WorkOSAuthorizationResource | undefined) => {
+    if (!resource) throw notFound('Resource');
+    const url = new URL(c.req.url);
+    const roleSlug = url.searchParams.get('role_slug');
+    const assignments = ws.organizationMemberships
+      .findBy('organization_id', resource.organization_id)
+      .flatMap((membership) => membershipRoleAssignments(ws, membership.id))
+      .filter(
+        (assignment) => assignment.resource_id === resource.id && (!roleSlug || assignment.role_slug === roleSlug),
+      );
+    return c.json(formatListResponse(cursorPaginate(assignments, parseListParams(url)), formatRoleAssignment));
+  };
+  app.get('/authorization/resources/:resourceId/role_assignments', (c) => {
+    return listResourceAssignments(c, ws.authorizationResources.get(c.req.param('resourceId')));
+  });
+  app.get('/authorization/organizations/:orgId/resources/:resourceTypeSlug/:externalId/role_assignments', (c) => {
+    const resource = ws.authorizationResources
+      .findBy('organization_id', c.req.param('orgId'))
+      .find(
+        (row) =>
+          row.resource_type_slug === c.req.param('resourceTypeSlug') && row.external_id === c.req.param('externalId'),
+      );
+    return listResourceAssignments(c, resource);
+  });
+  app.get('/authorization/groups/:groupId/role_assignments', (c) => {
+    const group = ws.groups.get(c.req.param('groupId'));
+    if (!group) throw notFound('Group');
+    const result = ws.groupRoleAssignments.list({
+      ...parseListParams(new URL(c.req.url)),
+      filter: (assignment) => assignment.group_id === group.id,
+    });
+    return c.json(formatListResponse(result, formatGroupRoleAssignment));
+  });
+  app.get('/authorization/groups/:groupId/role_assignments/:assignmentId', (c) => {
+    const group = ws.groups.get(c.req.param('groupId'));
+    const assignment = ws.groupRoleAssignments.get(c.req.param('assignmentId'));
+    if (!group || !assignment || assignment.group_id !== group.id) throw notFound('GroupRoleAssignment');
+    return c.json(formatGroupRoleAssignment(assignment));
+  });
+  app.post('/authorization/groups/:groupId/role_assignments', async (c) => {
+    const group = ws.groups.get(c.req.param('groupId'));
+    if (!group) throw notFound('Group');
+    const body = await parseJsonBody(c);
+    if (typeof body.role_slug !== 'string' || !body.role_slug)
+      throw validationError('role_slug is required', [{ field: 'role_slug', code: 'required' }]);
+    const role = resolvePrimaryRole(ws, group.organization_id, body.role_slug);
+    if (!role) throw notFound('Role');
+    const resource = resolveResourceTarget(ws, body, group.organization_id);
+    if (
+      ws.groupRoleAssignments
+        .findBy('group_id', group.id)
+        .some((assignment) => assignment.role_id === role.id && assignment.resource_id === (resource?.id ?? null))
+    )
+      throw new WorkOSApiError(409, 'This group role assignment already exists', 'group_role_assignment_conflict');
+    const assignment = ws.groupRoleAssignments.insert({
+      object: 'group_role_assignment',
+      group_id: group.id,
+      role_id: role.id,
+      role_slug: role.slug,
+      resource_id: resource?.id ?? null,
+      resource_external_id: resource?.external_id ?? null,
+      resource_type_slug: resource?.resource_type_slug ?? null,
+    });
+    return c.json(formatGroupRoleAssignment(assignment), 201);
+  });
+  app.delete('/authorization/groups/:groupId/role_assignments/:assignmentId', (c) => {
+    const group = ws.groups.get(c.req.param('groupId'));
+    const assignment = ws.groupRoleAssignments.get(c.req.param('assignmentId'));
+    if (!group || !assignment || assignment.group_id !== group.id) throw notFound('GroupRoleAssignment');
+    ws.groupRoleAssignments.delete(assignment.id);
+    return c.body(null, 204);
+  });
   // Create role assignment
   app.post('/authorization/organization_memberships/:id/role_assignments', async (c) => {
     const membershipId = c.req.param('id');

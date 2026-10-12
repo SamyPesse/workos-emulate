@@ -191,6 +191,7 @@ export function organizationRoutes(ctx: RouteContext): void {
 
     for (const resource of ws.authorizationResources.findBy('organization_id', org.id)) {
       ws.roleAssignments.deleteBy('resource_id', resource.id);
+      ws.groupRoleAssignments.deleteBy('resource_id', resource.id);
       ws.authorizationResources.delete(resource.id);
     }
     ws.organizations.delete(org.id);

@@ -32,6 +32,7 @@ import type {
   WorkOSRolePermission,
   WorkOSAuthorizationResource,
   WorkOSRoleAssignment,
+  WorkOSGroupRoleAssignment,
   WorkOSDirectory,
   WorkOSDirectoryUser,
   WorkOSDirectoryGroup,
@@ -85,6 +86,7 @@ export interface WorkOSStore {
   rolePermissions: Collection<WorkOSRolePermission>;
   authorizationResources: Collection<WorkOSAuthorizationResource>;
   roleAssignments: Collection<WorkOSRoleAssignment>;
+  groupRoleAssignments: Collection<WorkOSGroupRoleAssignment>;
   directories: Collection<WorkOSDirectory>;
   directoryUsers: Collection<WorkOSDirectoryUser>;
   directoryGroups: Collection<WorkOSDirectoryGroup>;
@@ -214,6 +216,11 @@ export function getWorkOSStore(store: Store): WorkOSStore {
       ID_PREFIXES.authorization_resource,
       ['organization_id', 'resource_type_slug'],
     ),
+    groupRoleAssignments: store.collection<WorkOSGroupRoleAssignment>('workos.group_role_assignments', 'gra', [
+      'group_id',
+      'role_id',
+      'resource_id',
+    ]),
     roleAssignments: store.collection<WorkOSRoleAssignment>('workos.role_assignments', ID_PREFIXES.role_assignment, [
       'organization_membership_id',
       'role_id',

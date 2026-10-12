@@ -1040,7 +1040,10 @@ export function formatRoleAssignment(ra: WorkOSRoleAssignment): Record<string, u
       external_id: ra.resource_external_id ?? null,
       resource_type_slug: ra.resource_type_slug ?? null,
     },
-    source: { type: 'direct', group_role_assignment_id: null },
+    source: {
+      type: ra.group_role_assignment_id ? 'group' : 'direct',
+      group_role_assignment_id: ra.group_role_assignment_id ?? null,
+    },
     created_at: ra.created_at,
     updated_at: ra.updated_at,
   };
