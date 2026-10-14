@@ -1,4 +1,5 @@
 import { describe, expect, it, setSystemTime } from 'bun:test';
+import { runCli, withCli } from './cli.test-utils.js';
 import { createEmulator, type Emulator } from './index.js';
 
 async function request(emulator: Emulator, apiKey = emulator.apiKey): Promise<Response> {
@@ -119,4 +120,85 @@ describe('request budgets', () => {
       );
     },
   );
+
+  // Public paths carry no API key, so they are counted against one shared anonymous budget
+  // rather than against whichever key happens to be in use.
+  it('budgets anonymous requests separately from API keys', async () => {
+    const emulator = await createEmulator({ port: 0, requestsPerMinute: 1 });
+    try {
+      const health = async () => {
+        const response = await fetch(`${emulator.url}/health`);
+        await response.text();
+        return response.status;
+      };
+      expect(await health()).toBe(200);
+      expect(await health()).toBe(429);
+      expect((await request(emulator)).status).toBe(200);
+    } finally {
+      await emulator.close();
+    }
+  });
+});
+
+/**
+ * The flag and the environment variable are how a shell or a compose file reaches the budget.
+ * Nothing above goes through the CLI, which parses and validates the value and prefers the flag
+ * over the environment before createEmulator ever sees a number.
+ */
+describe('--requests-per-minute / WORKOS_EMULATE_REQUESTS_PER_MINUTE', () => {
+  /** Status codes of `count` back-to-back authenticated requests. */
+  async function statuses(startup: { url: string; apiKey: string }, count: number): Promise<number[]> {
+    const result: number[] = [];
+    for (let i = 0; i < count; i++) {
+      const response = await fetch(`${startup.url}/organizations`, {
+        headers: { Authorization: `Bearer ${startup.apiKey}` },
+      });
+      await response.text();
+      result.push(response.status);
+    }
+    return result;
+  }
+
+  it('reads the flag, in both forms', async () => {
+    await withCli(['--requests-per-minute', '2'], {}, async (startup) => {
+      expect(await statuses(startup, 3)).toEqual([200, 200, 429]);
+    });
+    await withCli(['--requests-per-minute=1'], {}, async (startup) => {
+      expect(await statuses(startup, 2)).toEqual([200, 429]);
+    });
+  }, 20000);
+
+  it('reads the environment variable', async () => {
+    await withCli([], { WORKOS_EMULATE_REQUESTS_PER_MINUTE: '2' }, async (startup) => {
+      expect(await statuses(startup, 3)).toEqual([200, 200, 429]);
+    });
+  }, 20000);
+
+  it('prefers the flag over the environment', async () => {
+    await withCli(['--requests-per-minute', '1'], { WORKOS_EMULATE_REQUESTS_PER_MINUTE: '5' }, async (startup) => {
+      expect(await statuses(startup, 2)).toEqual([200, 429]);
+    });
+  }, 20000);
+
+  it.each(['0', '-1', 'abc', '1.5'])(
+    'exits rather than start with --requests-per-minute %s',
+    async (value) => {
+      const { exitCode, stderr } = await runCli(['--requests-per-minute', value]);
+      expect(exitCode).toBe(1);
+      expect(stderr).toContain(`Invalid --requests-per-minute: ${value}`);
+    },
+    20000,
+  );
+
+  it('exits rather than start with an invalid environment value', async () => {
+    const { exitCode, stderr } = await runCli([], { WORKOS_EMULATE_REQUESTS_PER_MINUTE: '0' });
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain('Invalid WORKOS_EMULATE_REQUESTS_PER_MINUTE: 0');
+  }, 20000);
+
+  it('requires a value', async () => {
+    const { exitCode, stderr } = await runCli(['--requests-per-minute']);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain('--requests-per-minute requires a value');
+  }, 20000);
 });

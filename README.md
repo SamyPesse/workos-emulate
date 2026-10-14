@@ -99,6 +99,7 @@ workos-emulate --interactive          # serve login pages for E2E browser testin
 workos-emulate --interactive-password # ...and ask a user who has a password for it
 workos-emulate --signing-key ci-key.pem --issuer https://api.workos.com  # stable JWKS and iss
 workos-emulate --redirect-hosts app.example.test  # allow a non-localhost redirect_uri
+workos-emulate --requests-per-minute 10000  # widen the per-key request budget (default 1000)
 workos-emulate --version
 ```
 
@@ -211,6 +212,10 @@ for example `createEmulator({ port: 0, requestsPerMinute: 10_000 })`. The full c
 accepted, so a budget of 1 allows one request before HTTP 429 responses with `Retry-After`. The
 last accepted request has `X-RateLimit-Remaining: 0`; the budget resets 60 seconds after the first
 request in the window. Anonymous requests share a separate budget.
+
+From the CLI, `--requests-per-minute 10000` sets the same budget, and
+`WORKOS_EMULATE_REQUESTS_PER_MINUTE=10000` is the environment equivalent, for a compose file or the
+Docker image. The flag wins over the environment.
 
 ### ⚠️ Important: EventBus Reset Limitation
 
@@ -1741,7 +1746,7 @@ The WorkOS Emulator is designed for testing and development environments. When u
 ### Authentication & Authorization
 
 - **No real authentication**: The emulator uses a simple API key system (`sk_test_default`) that provides no real security. Anyone with access to the emulator can make API calls.
-- **Local rate limiting**: The emulator defaults to a 1,000-request budget per API key per minute, configurable through `requestsPerMinute`. This in-memory limit is intended for tests, not production abuse protection.
+- **Local rate limiting**: The emulator defaults to a 1,000-request budget per API key per minute, configurable through `requestsPerMinute`, `--requests-per-minute` or `WORKOS_EMULATE_REQUESTS_PER_MINUTE`. This in-memory limit is intended for tests, not production abuse protection.
 - **Public error hook endpoints**: The `/_emulate/hooks` endpoints require no authentication and can be used by anyone who can reach the server.
 
 ### Data Security
