@@ -184,6 +184,11 @@ export const RESPONSE_SHAPE_REQUIREMENTS: Record<string, ResponseShapeRequiremen
       'updated_at',
     ],
   },
+  group_role_assignment: {
+    schema: 'GroupRoleAssignment',
+    properties: ['created_at', 'group_id', 'id', 'object', 'resource', 'role', 'updated_at'],
+    required: ['created_at', 'group_id', 'id', 'object', 'resource', 'role', 'updated_at'],
+  },
   organization: {
     schema: 'Organization',
     properties: [

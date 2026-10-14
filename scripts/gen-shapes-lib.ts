@@ -58,6 +58,7 @@ export const OBJECT_SCHEMA_MAP: readonly ShapeMapEntry[] = [
   { objectType: 'directory_user', schemaName: 'DirectoryUserWithGroups' },
   { objectType: 'role', schemaName: 'Role' },
   { objectType: 'permission', schemaName: 'AuthorizationPermission' },
+  { objectType: 'group_role_assignment', schemaName: 'GroupRoleAssignment' },
   { objectType: 'api_key', schemaName: 'ApiKey' },
   { objectType: 'password_reset', schemaName: 'PasswordReset' },
   { objectType: 'feature_flag', schemaName: 'Flag' },

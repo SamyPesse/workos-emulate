@@ -81,6 +81,7 @@ export const ID_PREFIXES = {
   role_permission: 'rp',
   authorization_resource: 'authz_resource',
   role_assignment: 'role_assignment',
+  group_role_assignment: 'gra',
   audit_log_action: 'audit_action',
   audit_log_event: 'audit_event',
   audit_log_export: 'audit_log_export',

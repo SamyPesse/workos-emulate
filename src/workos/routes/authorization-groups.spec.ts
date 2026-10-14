@@ -125,7 +125,43 @@ describe('Native group authorization', () => {
     expect(await check()).toBe(true);
     expect((await request(path, 'DELETE', criteria)).status).toBe(204);
     expect(await check()).toBe(false);
-    expect((await request(path, 'DELETE', criteria)).status).toBe(204);
+    // Group criteria removal is a 404 once nothing matches; the direct route stays a 204 no-op.
+    expect((await request(path, 'DELETE', criteria)).status).toBe(404);
+    expect((await request(memberPath, 'DELETE', criteria)).status).toBe(204);
+    // An unknown role slug is a 404 on both routes.
+    const unknownRole = { ...criteria, role_slug: 'missing-role' };
+    expect((await request(path, 'DELETE', unknownRole)).status).toBe(404);
+    expect((await request(memberPath, 'DELETE', unknownRole)).status).toBe(404);
+  });
+
+  it('rejects a duplicate group grant with the spec error code', async () => {
+    const { role, resource, path } = await setup();
+    const duplicate = await request(path, 'POST', { role_slug: role.slug, resource_id: resource.id });
+    expect(duplicate.status).toBe(409);
+    expect(((await duplicate.json()) as any).code).toBe('duplicate_group_role_assignment');
+  });
+
+  it('mints gra_ ids and grants on the organization resource when no resource is named', async () => {
+    const { organization, role, group, path, assignment, check } = await setup();
+    expect(assignment.id).toMatch(/^gra_/);
+    const rootGrant = await create(path, { role_slug: role.slug });
+    expect(rootGrant.resource).toEqual({
+      id: expect.stringMatching(/^authz_resource_/),
+      external_id: organization.id,
+      resource_type_slug: 'organization',
+    });
+    expect(rootGrant).toMatchObject({ object: 'group_role_assignment', group_id: group.id });
+    // The organization resource is an ancestor of every resource in the organization.
+    const other = await create('/authorization/resources', {
+      organization_id: organization.id,
+      resource_type_slug: 'repository',
+      external_id: 'other',
+      name: 'Other',
+    });
+    expect(await check(other.id)).toBe(true);
+    expect((await request(path, 'DELETE', { role_slug: role.slug })).status).toBe(204);
+    expect(await check(other.id)).toBe(false);
+    expect((await request(`${path}/${rootGrant.id}`)).status).toBe(404);
   });
 
   it('deleting a group removes its grants and revokes access', async () => {

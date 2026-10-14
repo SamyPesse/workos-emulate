@@ -50,6 +50,7 @@ import type {
   WorkOSPermission,
   WorkOSAuthorizationResource,
   WorkOSRoleAssignment,
+  WorkOSGroupRoleAssignment,
   WorkOSDirectory,
   WorkOSDirectoryUser,
   WorkOSDirectoryGroup,
@@ -1046,6 +1047,22 @@ export function formatRoleAssignment(ra: WorkOSRoleAssignment): Record<string, u
     },
     created_at: ra.created_at,
     updated_at: ra.updated_at,
+  };
+}
+
+export function formatGroupRoleAssignment(gra: WorkOSGroupRoleAssignment): Record<string, unknown> {
+  return {
+    object: 'group_role_assignment',
+    id: gra.id,
+    group_id: gra.group_id,
+    role: { slug: gra.role_slug },
+    resource: {
+      id: gra.resource_id,
+      external_id: gra.resource_external_id,
+      resource_type_slug: gra.resource_type_slug,
+    },
+    created_at: gra.created_at,
+    updated_at: gra.updated_at,
   };
 }
 

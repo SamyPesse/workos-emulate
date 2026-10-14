@@ -216,11 +216,11 @@ export function getWorkOSStore(store: Store): WorkOSStore {
       ID_PREFIXES.authorization_resource,
       ['organization_id', 'resource_type_slug'],
     ),
-    groupRoleAssignments: store.collection<WorkOSGroupRoleAssignment>('workos.group_role_assignments', 'gra', [
-      'group_id',
-      'role_id',
-      'resource_id',
-    ]),
+    groupRoleAssignments: store.collection<WorkOSGroupRoleAssignment>(
+      'workos.group_role_assignments',
+      ID_PREFIXES.group_role_assignment,
+      ['group_id', 'role_id', 'resource_id'],
+    ),
     roleAssignments: store.collection<WorkOSRoleAssignment>('workos.role_assignments', ID_PREFIXES.role_assignment, [
       'organization_membership_id',
       'role_id',

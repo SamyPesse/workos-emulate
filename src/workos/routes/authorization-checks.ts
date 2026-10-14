@@ -9,10 +9,17 @@ import {
   parseListParams,
   ID_PREFIXES,
 } from '../../core/index.js';
-import type { WorkOSAuthorizationResource, WorkOSRoleAssignment, WorkOSGroupRoleAssignment } from '../entities.js';
+import type { WorkOSAuthorizationResource, WorkOSRoleAssignment, WorkOSGroup } from '../entities.js';
 import { getWorkOSStore, type WorkOSStore } from '../store.js';
-import { formatRoleAssignment, formatAuthorizationResource, formatListResponse, formatPermission } from '../helpers.js';
+import {
+  formatRoleAssignment,
+  formatGroupRoleAssignment,
+  formatAuthorizationResource,
+  formatListResponse,
+  formatPermission,
+} from '../helpers.js';
 import { resolvePrimaryRole } from '../role-helpers.js';
+import { findOrCreateOrganizationResource } from '../organization-resource.js';
 
 // The resource itself plus every ancestor reachable through parent_resource_id.
 // Role assignments on an ancestor grant their permissions on all descendants.
@@ -89,16 +96,7 @@ function membershipRoleAssignments(ws: WorkOSStore, membershipId: string): WorkO
   }
   return assignments;
 }
-function formatGroupRoleAssignment(assignment: WorkOSGroupRoleAssignment): Record<string, unknown> {
-  const { id, created_at, updated_at } = assignment;
-  const role = { slug: assignment.role_slug };
-  const resource = {
-    id: assignment.resource_id,
-    external_id: assignment.resource_external_id,
-    resource_type_slug: assignment.resource_type_slug,
-  };
-  return { object: 'group_role_assignment', id, group_id: assignment.group_id, role, resource, created_at, updated_at };
-}
+
 // Resolve the resource a request body targets: resource_id, or
 // resource_external_id + resource_type_slug. Returns null when the body names
 // no resource at all.
@@ -137,6 +135,21 @@ function resolveResourceTarget(
   }
 
   return null;
+}
+
+// A group grant always names a resource: production's resolveResource maps an
+// omitted selector to the organization's own resource, so the spec requires
+// `resource.id`, `resource.external_id` and `resource.resource_type_slug`.
+function resolveGroupResourceTarget(
+  ws: WorkOSStore,
+  body: Record<string, unknown>,
+  group: WorkOSGroup,
+): WorkOSAuthorizationResource {
+  const resource = resolveResourceTarget(ws, body, group.organization_id);
+  if (resource) return resource;
+  const organization = ws.organizations.get(group.organization_id);
+  if (!organization) throw notFound('Organization');
+  return findOrCreateOrganizationResource(ws, organization);
 }
 
 export function authorizationCheckRoutes(ctx: RouteContext): void {
@@ -338,21 +351,26 @@ export function authorizationCheckRoutes(ctx: RouteContext): void {
       throw validationError('role_slug is required', [{ field: 'role_slug', code: 'required' }]);
     const role = resolvePrimaryRole(ws, group.organization_id, body.role_slug);
     if (!role) throw notFound('Role');
-    const resource = resolveResourceTarget(ws, body, group.organization_id);
+    const resource = resolveGroupResourceTarget(ws, body, group);
     if (
       ws.groupRoleAssignments
         .findBy('group_id', group.id)
-        .some((assignment) => assignment.role_id === role.id && assignment.resource_id === (resource?.id ?? null))
-    )
-      throw new WorkOSApiError(409, 'This group role assignment already exists', 'group_role_assignment_conflict');
+        .some((assignment) => assignment.role_id === role.id && assignment.resource_id === resource.id)
+    ) {
+      throw new WorkOSApiError(
+        409,
+        `A role assignment already exists for group '${group.id}', role '${role.id}', and resource '${resource.id}'.`,
+        'duplicate_group_role_assignment',
+      );
+    }
     const assignment = ws.groupRoleAssignments.insert({
       object: 'group_role_assignment',
       group_id: group.id,
       role_id: role.id,
       role_slug: role.slug,
-      resource_id: resource?.id ?? null,
-      resource_external_id: resource?.external_id ?? null,
-      resource_type_slug: resource?.resource_type_slug ?? null,
+      resource_id: resource.id,
+      resource_external_id: resource.external_id,
+      resource_type_slug: resource.resource_type_slug,
     });
     return c.json(formatGroupRoleAssignment(assignment), 201);
   });
@@ -369,12 +387,16 @@ export function authorizationCheckRoutes(ctx: RouteContext): void {
     const body = await parseJsonBody(c);
     if (typeof body.role_slug !== 'string' || !body.role_slug)
       throw validationError('role_slug is required', [{ field: 'role_slug', code: 'required' }]);
-    const resource = resolveResourceTarget(ws, body, group.organization_id);
-    for (const assignment of ws.groupRoleAssignments.findBy('group_id', group.id)) {
-      if (assignment.role_slug === body.role_slug && assignment.resource_id === (resource?.id ?? null)) {
-        ws.groupRoleAssignments.delete(assignment.id);
-      }
-    }
+    // Production resolves the slug first (an unknown role is a 404) and then
+    // "returns 404 when no matching active assignment is found".
+    const role = resolvePrimaryRole(ws, group.organization_id, body.role_slug);
+    if (!role) throw notFound('Role');
+    const resource = resolveGroupResourceTarget(ws, body, group);
+    const matching = ws.groupRoleAssignments
+      .findBy('group_id', group.id)
+      .filter((assignment) => assignment.role_id === role.id && assignment.resource_id === resource.id);
+    if (matching.length === 0) throw notFound('GroupRoleAssignment');
+    for (const assignment of matching) ws.groupRoleAssignments.delete(assignment.id);
     return c.body(null, 204);
   });
   // Create role assignment
@@ -440,6 +462,9 @@ export function authorizationCheckRoutes(ctx: RouteContext): void {
     const body = await parseJsonBody(c);
     if (typeof body.role_slug !== 'string' || !body.role_slug)
       throw validationError('role_slug is required', [{ field: 'role_slug', code: 'required' }]);
+    // Production rejects an unknown slug with a 404 but treats "nothing to
+    // remove" as success, unlike the group criteria delete above.
+    if (!resolvePrimaryRole(ws, membership.organization_id, body.role_slug)) throw notFound('Role');
     const resource = resolveResourceTarget(ws, body, membership.organization_id);
     for (const assignment of ws.roleAssignments.findBy('organization_membership_id', membershipId)) {
       if (assignment.role_slug === body.role_slug && assignment.resource_id === (resource?.id ?? null)) {

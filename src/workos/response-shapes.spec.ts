@@ -27,6 +27,7 @@ import {
   formatDirectoryUser,
   formatRole,
   formatPermission,
+  formatGroupRoleAssignment,
   formatApiKeyRecord,
   formatPasswordReset,
   formatFeatureFlag,
@@ -44,6 +45,7 @@ import type {
   WorkOSDirectoryUser,
   WorkOSRole,
   WorkOSPermission,
+  WorkOSGroupRoleAssignment,
   WorkOSApiKey,
   WorkOSPasswordReset,
   WorkOSFeatureFlag,
@@ -169,6 +171,19 @@ const permission: WorkOSPermission = {
   updated_at: TS,
 };
 
+const groupRoleAssignment: WorkOSGroupRoleAssignment = {
+  id: 'gra_01',
+  object: 'group_role_assignment',
+  group_id: 'group_01',
+  role_id: 'role_01',
+  role_slug: 'admin',
+  resource_id: 'authz_resource_01',
+  resource_external_id: 'proj-456',
+  resource_type_slug: 'project',
+  created_at: TS,
+  updated_at: TS,
+};
+
 const apiKey: WorkOSApiKey = {
   id: 'api_key_01',
   object: 'api_key',
@@ -260,6 +275,7 @@ const CASES: ReadonlyArray<{ objectType: string; output: Record<string, unknown>
   { objectType: 'directory_user', output: formatDirectoryUser(directoryUser) },
   { objectType: 'role', output: formatRole(role, ws) },
   { objectType: 'permission', output: formatPermission(permission) },
+  { objectType: 'group_role_assignment', output: formatGroupRoleAssignment(groupRoleAssignment) },
   { objectType: 'api_key', output: formatApiKeyRecord(apiKey) },
   { objectType: 'password_reset', output: formatPasswordReset(passwordReset) },
   { objectType: 'feature_flag', output: formatFeatureFlag(featureFlag) },

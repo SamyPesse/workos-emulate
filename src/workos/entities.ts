@@ -390,15 +390,19 @@ export interface WorkOSRoleAssignment extends Entity {
   resource_type_slug: string | null;
 }
 
-/** A role granted to a native AuthKit group on one resource. */
+/**
+ * A role granted to a native AuthKit group on one resource. Unlike a direct
+ * assignment, a group grant is always resource-scoped: production resolves an
+ * omitted resource to the organization's own resource, so these are never null.
+ */
 export interface WorkOSGroupRoleAssignment extends Entity {
   object: 'group_role_assignment';
   group_id: string;
   role_id: string;
   role_slug: string;
-  resource_id: string | null;
-  resource_external_id: string | null;
-  resource_type_slug: string | null;
+  resource_id: string;
+  resource_external_id: string;
+  resource_type_slug: string;
 }
 
 export interface WorkOSDirectory extends Entity {
