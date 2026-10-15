@@ -81,12 +81,7 @@ function membershipRoleAssignments(ws: WorkOSStore, membershipId: string): WorkO
   const membership = ws.organizationMemberships.get(membershipId);
   if (!membership) return [];
   const assignments = [...ws.roleAssignments.findBy('organization_membership_id', membershipId)];
-  // A membership can be linked to the same group more than once (a seed that repeats an
-  // email, say); expand each group once so the derived assignment ids stay unique.
-  const seenGroupIds = new Set<string>();
   for (const link of ws.groupMemberships.findBy('organization_membership_id', membershipId)) {
-    if (seenGroupIds.has(link.group_id)) continue;
-    seenGroupIds.add(link.group_id);
     const group = ws.groups.get(link.group_id);
     if (!group || group.organization_id !== membership.organization_id) continue;
     for (const assignment of ws.groupRoleAssignments.findBy('group_id', group.id)) {

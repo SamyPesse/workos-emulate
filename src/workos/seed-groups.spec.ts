@@ -302,8 +302,9 @@ describe('Seeding groups', () => {
           {
             name: 'Acme Corp',
             memberships: [{ email: 'dev@acme.com' }],
-            // Three links to the same membership. Each used to expand the group's grants
-            // again under the same derived id, which stalled cursor pagination.
+            // The same membership named three times used to become three links. Each link
+            // expanded the group's grants again under the same derived id, which stalled
+            // cursor pagination, and removing the member deleted only one of them.
             groups: [{ name: 'Readers', members: ['dev@acme.com', 'dev@acme.com', 'DEV@acme.com'] }],
           },
         ],
@@ -353,5 +354,13 @@ describe('Seeding groups', () => {
     expect(after).toBeNull();
     expect(ids).toHaveLength(1);
     expect(new Set(ids).size).toBe(ids.length);
+
+    // One link, so one removal takes the derived grant with it.
+    const membersPath = `/organizations/${org.id}/groups/${group.id}/organization-memberships`;
+    expect((await get(membersPath)).data).toHaveLength(1);
+    const removal = await fetch(`${base}${membersPath}/${membership.id}`, { method: 'DELETE', headers });
+    expect(removal.status).toBe(204);
+    const afterRemoval = await get(`/authorization/organization_memberships/${membership.id}/role_assignments`);
+    expect(afterRemoval.data).toHaveLength(0);
   });
 });

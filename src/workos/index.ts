@@ -617,6 +617,12 @@ export function seedFromConfig(store: Store, _baseUrl: string, config: WorkOSSee
                   `Seed group '${gg.name}' member '${memberEmail}' has no membership in organization '${orgConfig.name}'`,
                 );
               }
+              // One link per membership, however many times the seed names the email:
+              // the member-removal route and the derived role assignments both assume it.
+              const linked = ws.groupMemberships
+                .findBy('group_id', group.id)
+                .some((gm) => gm.organization_membership_id === membership.id);
+              if (linked) continue;
               ws.groupMemberships.insert({
                 group_id: group.id,
                 organization_membership_id: membership.id,
