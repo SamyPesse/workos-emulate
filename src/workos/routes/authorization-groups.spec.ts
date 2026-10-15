@@ -134,6 +134,32 @@ describe('Native group authorization', () => {
     expect((await request(memberPath, 'DELETE', unknownRole)).status).toBe(404);
   });
 
+  it('removes only the shadowing organization role grant, leaving the environment role grant', async () => {
+    const { organization, membership, role, resource, check } = await setup();
+    const memberPath = `/authorization/organization_memberships/${membership.id}/role_assignments`;
+    const criteria = { role_slug: role.slug, resource_id: resource.id };
+    // Grant the environment role before an organization role takes the slug: from then on
+    // the slug resolves to the organization role, so the second grant lands on that one.
+    const envGrant = await create(memberPath, criteria);
+    expect(envGrant.role_id).toBe(role.id);
+    const orgRole = await create(`/authorization/organizations/${organization.id}/roles`, {
+      slug: role.slug,
+      name: 'Organization reader',
+      resource_type_slug: 'repository',
+    });
+    const orgGrant = await create(memberPath, criteria);
+    expect(orgGrant.role_id).toBe(orgRole.id);
+
+    // Removal by criteria resolves the slug the same way, so only the organization role's
+    // grant goes; the environment role's grant, and the permissions it carries, stay.
+    expect((await request(memberPath, 'DELETE', criteria)).status).toBe(204);
+    const remaining = (await (await request(`${memberPath}?resource_id=${resource.id}`)).json()) as any;
+    const direct = remaining.data.filter((assignment: any) => assignment.source.type === 'direct');
+    expect(direct.map((assignment: any) => assignment.id)).toEqual([envGrant.id]);
+    expect(direct[0].role_id).toBe(role.id);
+    expect(await check()).toBe(true);
+  });
+
   it('rejects a duplicate group grant with the spec error code', async () => {
     const { role, resource, path } = await setup();
     const duplicate = await request(path, 'POST', { role_slug: role.slug, resource_id: resource.id });

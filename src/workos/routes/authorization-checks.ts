@@ -81,7 +81,12 @@ function membershipRoleAssignments(ws: WorkOSStore, membershipId: string): WorkO
   const membership = ws.organizationMemberships.get(membershipId);
   if (!membership) return [];
   const assignments = [...ws.roleAssignments.findBy('organization_membership_id', membershipId)];
+  // A membership can be linked to the same group more than once (a seed that repeats an
+  // email, say); expand each group once so the derived assignment ids stay unique.
+  const seenGroupIds = new Set<string>();
   for (const link of ws.groupMemberships.findBy('organization_membership_id', membershipId)) {
+    if (seenGroupIds.has(link.group_id)) continue;
+    seenGroupIds.add(link.group_id);
     const group = ws.groups.get(link.group_id);
     if (!group || group.organization_id !== membership.organization_id) continue;
     for (const assignment of ws.groupRoleAssignments.findBy('group_id', group.id)) {
@@ -464,10 +469,13 @@ export function authorizationCheckRoutes(ctx: RouteContext): void {
       throw validationError('role_slug is required', [{ field: 'role_slug', code: 'required' }]);
     // Production rejects an unknown slug with a 404 but treats "nothing to
     // remove" as success, unlike the group criteria delete above.
-    if (!resolvePrimaryRole(ws, membership.organization_id, body.role_slug)) throw notFound('Role');
+    const role = resolvePrimaryRole(ws, membership.organization_id, body.role_slug);
+    if (!role) throw notFound('Role');
     const resource = resolveResourceTarget(ws, body, membership.organization_id);
+    // Match the resolved role's id, not the slug: an organization role shadows an
+    // environment role of the same slug, and only the shadowing role's grant goes.
     for (const assignment of ws.roleAssignments.findBy('organization_membership_id', membershipId)) {
-      if (assignment.role_slug === body.role_slug && assignment.resource_id === (resource?.id ?? null)) {
+      if (assignment.role_id === role.id && assignment.resource_id === (resource?.id ?? null)) {
         ws.roleAssignments.delete(assignment.id);
       }
     }
